@@ -9,6 +9,16 @@
 /home/sujayneglur123/ClionProjects/ImageSegmentation/main.cpp
 opencv2/opencv.hpp
 -
+iostream
+-
+limits
+-
+algorithm
+-
+string
+-
+queue
+-
 
 /usr/local/include/opencv/cxcore.h
 opencv2/core/core_c.h
