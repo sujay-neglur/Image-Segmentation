@@ -1,383 +1,500 @@
-#include <opencv2/opencv.hpp>
 #include <iostream>
-#include <limits>
-#include <algorithm>
-#include <string>
-#include <queue>
+#include <fstream>
+#include <cmath>
+#include <vector>
+#include <opencv2/opencv.hpp>
 
-using namespace cv;
 using namespace std;
+using namespace cv;
 
-int N, M;
 
+int findIntensity(int i, int j) {
+    return abs(i + j) / 2;
+}
 
-void formAdjacency(int **adjacency, int i, int j, int **classify);
+bool checkSimilar(int i, int j) {
+//    int greater, smaller;
+//    if (i >= j) {
+//        greater = i;
+//        smaller = j;
+//    } else {
+//        greater = j;
+//        smaller = i;
+//    }
+//    if (greater * 0.9 < smaller && smaller * 1.1 > greater)
+//        return true;
+//    else
+//        return false;
+    return i == j;
 
-int bfs(int **adjacency, int s, int t, int parent[],int rows,int cols)
-{
-    bool visited[rows];
-    memset(visited, 0, sizeof(visited));
-    int count=0;
-    // Create a queue, enqueue source vertex and mark source vertex
-    // as visited
-    queue <int> q;
-    q.push(s);
-    visited[s] = true;
-    parent[s] = -1;
+}
 
-    // Standard BFS Loop
-    while (!q.empty())
-    {
-        int u = q.front();
-        q.pop();
-
-        for (int v=0; v<rows; v++)
-        {
-            if (visited[v]==false && adjacency[u][v] > 0)
-            {
-                cout<<count++<<endl;
-                q.push(v);
-                parent[v] = u;
-                visited[v] = 1;
-            }
+void colorImage(Mat &image, bool *visited) {
+    int i, r, c;
+    int row = image.rows;
+    int col = image.cols;
+    for (i = 0; i < row * col; i++) {
+        if (visited[i]) {
+            r = i / col;
+            c = i % col;
+            image.at<Vec3b>(r, c)[0] = 0;
+            image.at<Vec3b>(r, c)[1] = 0;
+            image.at<Vec3b>(r, c)[2] = 255;
+        } else {
+            r = i / col;
+            c = i % col;
+            image.at<Vec3b>(r, c)[0] = 255;
+            image.at<Vec3b>(r, c)[1] = 0;
+            image.at<Vec3b>(r, c)[2] = 0;
         }
     }
-    cout<<"queue empty"<<endl;
-    // If we reached sink in BFS starting from source, then return
-    // true, else false
-    return (visited[t] == 1);
 }
 
-// A DFS based function to find all reachable vertices from s.  The function
-// marks visited[i] as true if i is reachable from s.  The initial values in
-// visited[] must be false. We can also use BFS to find reachable vertices
-void dfs(int **adjacency, int s, bool visited[],int rows,int cols)
-{
-    visited[s] = true;
-    for (int i = 0; i < rows; i++)
-        if (adjacency[s][i] && !visited[i])
-            dfs(adjacency, i, visited,rows,cols);
-}
-
-// Prints the minimum s-t cut
-void minCut(int **adjacency, int s, int t,int rows,int cols)
-{
-    int u, v;
-
-    // Create a residual graph and fill the residual graph with
-    // given capacities in the original graph as residual capacities
-    // in residual graph
-
-    int parent[rows];  // This array is filled by BFS and to store path
-
-    // Augment the flow while tere is path from source to sink
-    cout<<bfs(adjacency, s, t, parent,rows,cols)<<endl;
-    while (bfs(adjacency, s, t, parent,rows,cols))
-    {
-        cout<<"in while"<<endl;
-        // Find minimum residual capacity of the edhes along the
-        // path filled by BFS. Or we can say find the maximum flow
-        // through the path found.
-        int path_flow = INT_MAX;
-        for (v=t; v!=s; v=parent[v])
-        {
-            u = parent[v];
-            path_flow = min(path_flow, adjacency[u][v]);
-        }
-
-        // update residual capacities of the edges and reverse edges
-        // along the path
-        for (v=t; v != s; v=parent[v])
-        {
-            u = parent[v];
-            adjacency[u][v] -= path_flow;
-            adjacency[v][u] += path_flow;
-        }
+bool checkEdgePresent(vector<vector<pair<int, int> > > &adj, int i, int j) {
+    bool edgePresent = false;
+    vector<pair<int, int> >::iterator it;
+    for (it = adj[i].begin(); it != adj[i].end(); it++) {
+        if ((*it).first == j && (*it).second != 0)
+            edgePresent = true;
     }
-
-    // Flow is maximum now, find vertices reachable from s
-    bool visited[rows];
-    memset(visited, false, sizeof(visited));
-    dfs(adjacency, s, visited,rows,cols);
-
-    // Print all edges that are from a reachable vertex to
-    // non-reachable vertex in the original graph
-    for (int i = 0; i < rows; i++)
-        for (int j = 0; j < rows; j++)
-            if (visited[i] && !visited[j] && adjacency[i][j])
-                cout << i << " - " << j << endl;
-
-    return;
+    return edgePresent;
 }
 
-int main() {
-    Mat in_image, ii_image, temp_image;
-    in_image = imread("simple.png");
-    ii_image = in_image.clone();
-    cvtColor(ii_image, temp_image, CV_BGR2GRAY);
-    vector<int> fgPixels = {230, 180, 380, 180, 230, 280, 380, 280};
-    vector<int> bgPixels = {200, 150, 410, 170, 180, 300, 410, 290};
-    int fgAvg = 0, bgAvg = 0, sum = 0;
+bool searchPath(vector<vector<pair<int, int> > > &adj, int source, int target, int *parent) {
+    if (source == target)
+        return true;
+    vector<bool> visited(adj.size());
     int i, j;
-    for (i = 0; i < fgPixels.size(); i += 2) {
-        sum += (int) temp_image.at<uchar>(i, i + 1);
-    }
-    fgAvg = sum / 4;
-    sum = 0;
-    for (j = 0; j < bgPixels.size(); j += 2) {
-        sum += (int) temp_image.at<uchar>(j, j + 1);
-    }
-    bgAvg = sum / 4;
-    int **classify = new int *[temp_image.rows];
-    for (i = 0; i < temp_image.rows; i++)
-        classify[i] = new int[temp_image.cols];
-
-    int fgdif, bgdif;
-    for (i = 0; i < temp_image.rows; i++) {
-        for (j = 0; j < temp_image.cols; j++) {
-            fgdif = abs((int) temp_image.at<uchar>(i, j) - fgAvg);
-            bgdif = abs((int) temp_image.at<uchar>(i, j) - bgAvg);
-            if (fgdif < bgdif) {
-                classify[i][j] = 1;
-            } else {
-                classify[i][j] = 0;
+    for (i = 0; i < visited.size(); i++)
+        visited[i] = false;
+    visited[source] = true;
+    list<int> queue;
+    queue.push_back(source);
+    vector<pair<int, int> >::iterator it;
+    vector<pair<int, int> > temp;
+    parent[source] = -1;
+    while (!queue.empty()) {
+        source = queue.front();
+        queue.pop_front();
+        for (it = adj[source].begin(); it != adj[source].end(); it++) {
+            if (source == target) {
+                return true;
             }
-        }
-    }
-    int rows = temp_image.rows;
-    int cols = temp_image.cols;
-    M = rows;
-    N = cols;
-    int **adjacency = new int *[rows * cols];
-    for (i = 0; i < rows * cols; i++) {
-        adjacency[i] = new int[rows * cols];
-    }
-    for (i = 0; i < rows; i++) {
-        for (j = 0; j < cols; j++) {
-            formAdjacency(adjacency, i, j, classify);
-        }
-    }
-    minCut(adjacency,N*230+180,N*200+150,rows*cols,rows*cols);
-    cout << adjacency[255999][255998] << endl;
+            if (!visited[(*it).first] && checkEdgePresent(adj, source, (*it).first)) {
+                queue.push_back((*it).first);
+                parent[(*it).first] = source;
+                visited[(*it).first] = true;
+            }
 
-    return 0;
+        }
+    }
+    return false;
 }
 
-void formAdjacency(int **adjacency, int i, int j, int **classify) {
-    int left, right, bottom, up, current;
-    if (i == j) {
-        adjacency[i][j] = 0;
-        return;
+void checkReachable(vector<vector<pair<int, int> > > &adj, int source, bool *visited) {
+    queue<int> q;
+    q.push(source);
+    visited[source] = true;
+    while (!q.empty()) {
+        int front = q.front();
+        q.pop();
+        visited[front] = true;
+        vector<pair<int, int> >::iterator it;
+        for (it = adj[front].begin(); it != adj[front].end(); it++) {
+            if (!visited[(*it).first] && checkEdgePresent(adj, front, (*it).first)) {
+                visited[(*it).first] = true;
+                q.push((*it).first);
+            }
+        }
     }
+}
+
+bool *graphCut(Mat &in_image, vector<vector<pair<int, int> > > &adj, int source, int target) {
+    int i, j;
+    vector<vector<pair<int, int> > > residual = adj;
+    int *parent = new int[adj.size()];
+    while (searchPath(residual, source, target, parent)) {
+        int flow = numeric_limits<int>::max();
+        for (j = target; j != source; j = parent[j]) {
+            int weight = 0;
+            i = parent[j];
+            vector<pair<int, int> >::iterator it;
+            for (it = residual[i].begin(); it != residual[i].end(); it++) {
+                if ((*it).first == j)
+                    weight = (*it).second;
+            }
+            flow = min(flow, weight);
+        }
+        for (j = target; j != source; j = parent[j]) {
+            vector<pair<int, int> >::iterator it;
+            i = parent[j];
+            for (it = residual[i].begin(); it != residual[i].end(); it++) {
+                if ((*it).first == j) {
+                    (*it).second -= flow;
+                }
+            }
+            for (it = residual[j].begin(); it != residual[j].end(); it++) {
+                if ((*it).first == i) {
+                    (*it).second += flow;
+                }
+            }
+        }
+    }
+    vector<pair<int, int> >::iterator it;
+    bool *visited = new bool[adj.size()];
+    memset(visited, false, adj.size());
+    checkReachable(residual, source, visited);
+//    for (int i = 0; i < adj.size(); i++) {
+//        vector<pair<int, int>>::iterator it;
+//        for (it = adj[i].begin(); it != adj[i].end(); it++) {
+//            if (visited[i] && !visited[(*it).first] && checkEdgePresent(adj, i, (*it).first)) {
+//                cout << i << " - " << (*it).first << endl;
+//            }
+//        }
+//    }
+    return visited;
+
+}
+
+void fillAdjacency(Mat image, vector<vector<pair<int, int> > > &adj, int i, int j, int maxIntensity) {
+    int N = image.cols;
+    pair<int, int> temp;
+    int left, right, top, bottom, weight, avgIntensity;
     if (i == 0) {
-        if (j == N - 1) {
-            j = N - 1;
-            left = classify[i][j - 1];
-            bottom = classify[i + 1][j];
-            current = classify[i][j];
-            if (current == left) {
-                adjacency[N * i + j][N * i + j - 1] = 1000;
-                adjacency[N * i + j - 1][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * i + j - 1] = 50;
-                adjacency[N * i + j - 1][N * i + j] = 50;
-            }
-            if (current == bottom) {
-                adjacency[N * i + j][N * (i + 1) + j] = 1000;
-                adjacency[N * (i + 1) + j][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * (i + 1) + j] = 50;
-                adjacency[N * (i + 1) + j][N * i + j] = 50;
-            }
+        if (j == 0) {
+            vector<pair<int, int> > vtemp;
+            //right
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1))) {
+                weight = numeric_limits<int>::max();
+            } else
+                weight = 50;
+            temp = make_pair(N * i + j + 1, weight);
+            vtemp.push_back(temp);
+            //bottom
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i + 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
+            return;
+        } else if (j == image.cols - 1) {
+            vector<pair<int, int> > vtemp;
+            //left
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j - 1, weight);
+            vtemp.push_back(temp);
+            //bottom
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i + 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
 
         } else {
-
-            left = classify[i][j - 1];
-            right = classify[i][j + 1];
-            current = classify[i][j];
-            bottom = classify[i + 1][j];
-            if (left == current) {
-                adjacency[N * i + j][N * i + j - 1] = 1000;
-                adjacency[N * i + j - 1][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * i + j - 1] = 50;
-                adjacency[N * i + j - 1][N * i + j] = 50;
-            }
-            if (right == current) {
-                adjacency[N * i + j][N * i + j + 1] = 1000;
-                adjacency[N * i + j + 1][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * i + j + 1] = 50;
-                adjacency[N * i + j + 1][N * i + j] = 50;
-            }
-            if (current == bottom) {
-                adjacency[N * i + j][N * (i + 1) + j] = 1000;
-                adjacency[N * (i + 1) + j][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * (i + 1) + j] = 50;
-                adjacency[N * (i + 1) + j][N * i + j] = 50;
-            }
-
+            vector<pair<int, int> > vtemp;
+            //left
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j - 1, weight);
+            vtemp.push_back(temp);
+            //right
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j + 1, weight);
+            vtemp.push_back(temp);
+            //bottom
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i + 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
         }
         return;
     }
-
-    if (i == M - 1) {
+    if (i == image.rows - 1) {
         if (j == 0) {
-            right = classify[i][j + 1];
-            up = classify[i - 1][j];
-            current = classify[i][j];
-            if (right == current) {
-                adjacency[N * i + j][N * i + j + 1] = 1000;
-                adjacency[N * i + j + 1][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * i + j + 1] = 50;
-                adjacency[N * i + j + 1][N * i + j] = 50;
-            }
-            if (up == current) {
-                adjacency[N * i + j][N * (i - 1) + j] = 1000;
-                adjacency[N * (i - 1) + j][N * i + j] = 1000;
-            } else {
-                adjacency[N * i + j][N * (i - 1) + j] = 50;
-                adjacency[N * (i - 1) + j][N * i + j] = 50;
-            }
+            vector<pair<int, int> > vtemp;
+            //right
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j + 1, weight);
+            vtemp.push_back(temp);
+            //top
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i - 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
+        } else if (j == image.cols - 1) {
+            vector<pair<int, int> > vtemp;
+            //left
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j - 1, weight);
+            vtemp.push_back(temp);
+            //top
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i - 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
         } else {
-            if (j == N - 1) {
-                left = classify[i][j - 1];
-                up = classify[i - 1][j];
-                current = classify[i][j];
-                if (left == current) {
-                    adjacency[N * i + j][N * i + j - 1] = 1000;
-                    adjacency[N * i + j - 1][N * i + j] = 1000;
-                } else {
-                    adjacency[N * i + j][N * i + j - 1] = 50;
-                    adjacency[N * i + j - 1][N * i + j] = 50;
-                }
-                if (current == up) {
-                    adjacency[N * i + j][N * (i - 1) + j] = 1000;
-                    adjacency[N * (i - 1) + j][N * i + j] = 1000;
-                } else {
-                    adjacency[N * i + j][N * (i - 1) + j] = 50;
-                    adjacency[N * (i - 1) + j][N * i + j] = 50;
-                }
-            } else {
-                left = classify[i][j - 1];
-                right = classify[i][j + 1];
-                current = classify[i][j];
-                up = classify[i - 1][j];
-                if (left == current) {
-                    adjacency[N * i + j][N * i + j - 1] = 1000;
-                    adjacency[N * i + j - 1][N * i + j] = 1000;
-                } else {
-                    adjacency[N * i + j][N * i + j - 1] = 50;
-                    adjacency[N * i + j - 1][N * i + j] = 50;
-                }
-                if (right == current) {
-                    adjacency[N * i + j][N * i + j + 1] = 1000;
-                    adjacency[N * i + j + 1][N * i + j] = 1000;
-                } else {
-                    adjacency[N * i + j][N * i + j + 1] = 50;
-                    adjacency[N * i + j + 1][N * i + j] = 50;
-                }
-                if (current == up) {
-                    adjacency[N * i + j][N * (i - 1) + j] = 1000;
-                    adjacency[N * (i - 1) + j][N * i + j] = 1000;
-                } else {
-                    adjacency[N * i + j][N * (i - 1) + j] = 50;
-                    adjacency[N * (i - 1) + j][N * i + j] = 50;
-                }
-            }
+            vector<pair<int, int> > vtemp;
+            //left
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j - 1, weight);
+            vtemp.push_back(temp);
+            //right
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * i + j + 1, weight);
+            vtemp.push_back(temp);
+            //top
+//            avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//            weight = maxIntensity - avgIntensity;
+            if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+                weight = numeric_limits<int>::max();
+            else
+                weight = 50;
+            temp = make_pair(N * (i - 1) + j, weight);
+            vtemp.push_back(temp);
+            adj.push_back(vtemp);
         }
         return;
     }
     if (j == 0) {
-        right = classify[i][j + 1];
-        up = classify[i - 1][j];
-        bottom = classify[i + 1][j];
-        current = classify[i][j];
-        if (right == current) {
-            adjacency[N * i + j][N * i + j + 1] = 1000;
-            adjacency[N * i + j + 1][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * i + j + 1] = 50;
-            adjacency[N * i + j + 1][N * i + j] = 50;
-        }
-        if (current == up) {
-            adjacency[N * i + j][N * (i - 1) + j] = 1000;
-            adjacency[N * (i - 1) + j][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * (i - 1) + j] = 50;
-            adjacency[N * (i - 1) + j][N * i + j] = 50;
-        }
-        if (current == bottom) {
-            adjacency[N * i + j][N * (i + 1) + j] = 1000;
-            adjacency[N * (i + 1) + j][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * (i + 1) + j] = 50;
-            adjacency[N * (i + 1) + j][N * i + j] = 50;
-        }
+        vector<pair<int, int> > vtemp;
+        //right
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * i + j + 1, weight);
+        vtemp.push_back(temp);
+        //top
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * (i - 1) + j, weight);
+        vtemp.push_back(temp);
+        //bottom
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * (i + 1) + j, weight);
+        vtemp.push_back(temp);
+        adj.push_back(vtemp);
         return;
     }
-    if (j == N - 1) {
-        left = classify[i][j - 1];
-        up = classify[i - 1][j];
-        bottom = classify[i + 1][j];
-        current = classify[i][j];
-        if (current == up) {
-            adjacency[N * i + j][N * (i - 1) + j] = 1000;
-            adjacency[N * (i - 1) + j][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * (i - 1) + j] = 50;
-            adjacency[N * (i - 1) + j][N * i + j] = 50;
-        }
-        if (current == bottom) {
-            adjacency[N * i + j][N * (i + 1) + j] = 1000;
-            adjacency[N * (i + 1) + j][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * (i + 1) + j] = 50;
-            adjacency[N * (i + 1) + j][N * i + j] = 50;
-        }
-        if (left == current) {
-            adjacency[N * i + j][N * i + j - 1] = 1000;
-            adjacency[N * i + j - 1][N * i + j] = 1000;
-        } else {
-            adjacency[N * i + j][N * i + j - 1] = 50;
-            adjacency[N * i + j - 1][N * i + j] = 50;
-        }
+    if (j == image.cols - 1) {
+        vector<pair<int, int> > vtemp;
+        //left
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * i + j - 1, weight);
+        vtemp.push_back(temp);
+        //top
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * (i - 1) + j, weight);
+        vtemp.push_back(temp);
+        //bottom
+//        avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//        weight = maxIntensity - avgIntensity;
+        if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+            weight = numeric_limits<int>::max();
+        else
+            weight = 50;
+        temp = make_pair(N * (i + 1) + j, weight);
+        vtemp.push_back(temp);
+        adj.push_back(vtemp);
         return;
     }
-    left = classify[i][j - 1];
-    up = classify[i - 1][j];
-    bottom = classify[i + 1][j];
-    current = classify[i][j];
-    right = classify[i][j + 1];
-    if (current == up) {
-        adjacency[N * i + j][N * (i - 1) + j] = 1000;
-        adjacency[N * (i - 1) + j][N * i + j] = 1000;
-    } else {
-        adjacency[N * i + j][N * (i - 1) + j] = 50;
-        adjacency[N * (i - 1) + j][N * i + j] = 50;
-    }
-    if (current == bottom) {
-        adjacency[N * i + j][N * (i + 1) + j] = 1000;
-        adjacency[N * (i + 1) + j][N * i + j] = 1000;
-    } else {
-        adjacency[N * i + j][N * (i + 1) + j] = 50;
-        adjacency[N * (i + 1) + j][N * i + j] = 50;
-    }
-    if (left == current) {
-        adjacency[N * i + j][N * i + j - 1] = 1000;
-        adjacency[N * i + j - 1][N * i + j] = 1000;
-    } else {
-        adjacency[N * i + j][N * i + j - 1] = 50;
-        adjacency[N * i + j - 1][N * i + j] = 50;
-    }
-    if (right == current) {
-        adjacency[N * i + j][N * i + j + 1] = 1000;
-        adjacency[N * i + j + 1][N * i + j] = 1000;
-    } else {
-        adjacency[N * i + j][N * i + j + 1] = 50;
-        adjacency[N * i + j + 1][N * i + j] = 50;
-    }
+    vector<pair<int, int> > vtemp;
+    //left
+//    avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1));
+//    weight = maxIntensity - avgIntensity;
+    if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j - 1)))
+        weight = numeric_limits<int>::max();
+    else
+        weight = 50;
+    temp = make_pair(N * i + j - 1, weight);
+    vtemp.push_back(temp);
+    //right
+//    avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1));
+//    weight = maxIntensity - avgIntensity;
+    if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i, j + 1)))
+        weight = numeric_limits<int>::max();
+    else
+        weight = 50;
+    temp = make_pair(N * i + j + 1, weight);
+    vtemp.push_back(temp);
+    //top
+//    avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j));
+//    weight = maxIntensity - avgIntensity;
+    if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i - 1, j)))
+        weight = numeric_limits<int>::max();
+    else
+        weight = 50;
+    temp = make_pair(N * (i - 1) + j, weight);
+    vtemp.push_back(temp);
+    //bottom
+//    avgIntensity = findIntensity((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j));
+//    weight = maxIntensity - avgIntensity;
+    if (checkSimilar((int) image.at<uchar>(i, j), (int) image.at<uchar>(i + 1, j)))
+        weight = numeric_limits<int>::max();
+    else
+        weight = 50;
+    temp = make_pair(N * (i + 1) + j, weight);
+    vtemp.push_back(temp);
+    adj.push_back(vtemp);
     return;
+}
+
+int main(int argc, char *argv[]) {
+//    clock_t begin = clock();
+    ifstream inFile;
+    ofstream outFile;
+    int i, j, maxIntensity = 0;
+    int row, col, loc;
+    Mat image = imread(argv[1]), grayImage;
+    GaussianBlur(image, image, Size(3, 3), 0, 0, BORDER_DEFAULT);
+    cvtColor(image, grayImage, CV_BGR2GRAY);
+//    Mat grdx,grdy;
+//    Scharr(grayImage,grdx,CV_16S,1,0);
+//    convertScaleAbs(grdx,grdx);
+//    Scharr(grayImage,grdy,CV_16S,0,1);
+//    convertScaleAbs(grdy,grdy);
+//    addWeighted(grdx,0.5,grdy,0.5,0,grayImage);
+    for (i = 0; i < image.rows; i++) {
+        for (j = 0; j < image.cols; j++) {
+            if ((int) image.at<uchar>(i, j) > maxIntensity)
+                maxIntensity = (int) image.at<uchar>(i, j);
+        }
+    }
+    vector<vector<pair<int, int> > > adj;
+    for (i = 0; i < image.rows; i++) {
+        for (j = 0; j < image.cols; j++) {
+            fillAdjacency(grayImage, adj, i, j, maxIntensity);
+        }
+    }
+
+    adj.resize(adj.size() + 2);
+    int pixels;
+    inFile.open(argv[2]);
+    inFile >> pixels;
+    i = 0;
+    vector<int> fg, bg;
+    while (i != pixels) {
+        inFile >> col;
+        inFile >> row;
+        inFile >> loc;
+        if (loc == 1)
+            fg.push_back(image.cols * row + col);
+        else
+            bg.push_back(image.cols * row + col);
+
+        i++;
+    }
+    vector<pair<int, int> > temp1;
+    //connect virtual source to fg pixels
+    for (i = 0; i < fg.size(); i++) {
+        vector<pair<int, int> >::iterator it;
+        pair<int, int> temp = make_pair(fg[i], numeric_limits<int>::max());
+        temp1.push_back(temp);
+    }
+
+    adj[adj.size() - 2] = temp1;
+    temp1.clear();
+    //connect virtual target to bg pixels
+    for (i = 0; i < bg.size(); i++) {
+        vector<pair<int, int> >::iterator it;
+        pair<int, int> temp = make_pair(bg[i], numeric_limits<int>::max());
+        temp1.push_back(temp);
+    }
+
+    adj[adj.size() - 1] = temp1;
+    temp1.clear();
+    //connect fg and bg pixels to virtual source and target
+    for (i = 0; i < fg.size(); i++) {
+        pair<int, int> temp = make_pair(adj.size() - 2, numeric_limits<int>::max());
+        adj[fg[i]].push_back(temp);
+        temp = make_pair(adj.size() - 1, numeric_limits<int>::max());
+        adj[bg[i]].push_back(temp);
+    }
+
+    bool *visited = graphCut(image, adj, image.rows * image.cols, image.rows * image.cols + 1);
+    colorImage(image, visited);
+    imwrite(argv[3], image);
+//     clock_t end = clock();
+//    double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+//    cout<<"Time "<<time_spent<<endl;
 }
